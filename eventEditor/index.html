@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>이벤트 카드 편집기 — 무협 텍스트 어드벤처</title>
+<style>
+  :root{
+    /* 한지 베이스 */
+    --paper:        oklch(0.955 0.014 78);
+    --paper-2:      oklch(0.925 0.018 76);
+    --paper-edge:   oklch(0.875 0.020 74);
+    --ink:          oklch(0.255 0.012 60);
+    --ink-soft:     oklch(0.430 0.010 60);
+    --ink-faint:    oklch(0.600 0.008 60);
+    --line:         oklch(0.840 0.014 72);
+    --line-soft:    oklch(0.890 0.012 74);
+
+    /* 타입 액센트 (같은 채도/명도 계열에서 색상만 회전) */
+    --c-prologue:   oklch(0.560 0.095 245);   /* 푸른 새벽 */
+    --c-prologue-bg:oklch(0.940 0.030 245);
+    --c-normal:     oklch(0.430 0.012 60);    /* 무채 · 먹빛 */
+    --c-normal-bg:  oklch(0.930 0.010 70);
+    --c-battle:     oklch(0.510 0.150 25);    /* 핏빛 */
+    --c-battle-bg:  oklch(0.935 0.040 28);
+    --c-ending:     oklch(0.640 0.105 82);    /* 금빛 */
+    --c-ending-bg:  oklch(0.940 0.045 86);
+
+    --shadow: 0 1px 2px oklch(0.30 0.02 60 / 0.10), 0 8px 22px oklch(0.30 0.02 60 / 0.10);
+    --serif: "Apple SD Gothic Neo","Nanum Myeongjo","Apple Myungjo","Batang","Gungsuh", serif;
+    --sans: "Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR", system-ui, sans-serif;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:var(--sans);
+    color:var(--ink);
+    background:
+      radial-gradient(circle at 20% 0%, oklch(0.97 0.012 80) 0%, transparent 55%),
+      radial-gradient(circle at 100% 100%, oklch(0.91 0.020 70) 0%, transparent 45%),
+      var(--paper);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ====== 상단 바 ====== */
+  header.topbar{
+    position:sticky; top:0; z-index:40;
+    display:flex; align-items:center; gap:24px;
+    padding:18px 34px;
+    background:oklch(0.955 0.014 78 / 0.86);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .brand{ display:flex; flex-direction:column; gap:2px; }
+  .brand .seal{
+    display:inline-flex; align-items:center; gap:10px;
+    font-family:var(--serif); font-weight:700; font-size:22px; letter-spacing:.06em;
+    color:var(--ink);
+  }
+  .brand .seal .chip{
+    width:26px; height:26px; border-radius:5px;
+    background:linear-gradient(145deg, var(--c-battle), oklch(0.36 0.13 25));
+    color:oklch(0.97 0.02 80); font-family:var(--serif); font-weight:700;
+    display:grid; place-items:center; font-size:15px; line-height:1;
+    box-shadow:inset 0 0 0 1px oklch(1 0 0 / .18);
+  }
+  .brand .sub{ font-size:12px; color:var(--ink-faint); letter-spacing:.04em; padding-left:36px; }
+
+  .toolbar{ margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .counter{
+    font-size:12px; color:var(--ink-soft); margin-right:6px;
+    font-variant-numeric:tabular-nums; letter-spacing:.02em;
+  }
+  .counter b{ color:var(--ink); font-weight:600; }
+
+  button{ font-family:var(--sans); cursor:pointer; }
+  .btn{
+    border:1px solid var(--line); background:var(--paper);
+    color:var(--ink); padding:9px 15px; border-radius:8px;
+    font-size:13px; font-weight:500; letter-spacing:.02em;
+    transition:background .12s, border-color .12s, transform .06s;
+    display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+  }
+  .btn:hover{ background:var(--paper-2); border-color:var(--ink-faint); }
+  .btn:active{ transform:translateY(1px); }
+  .btn .ic{ font-size:14px; line-height:1; }
+  .btn.primary{
+    background:var(--ink); color:var(--paper); border-color:var(--ink);
+  }
+  .btn.primary:hover{ background:oklch(0.18 0.012 60); }
+
+  /* ====== 보드 ====== */
+  main.board{
+    padding:30px 34px 120px;
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(348px, 1fr));
+    gap:24px;
+    align-items:start;
+    max-width:1680px; margin:0 auto;
+  }
+
+  /* ====== 타입 그룹 구분선 ====== */
+  .group-sep{
+    grid-column:1/-1;
+    display:flex; align-items:center; gap:14px;
+    margin:8px 0 -4px;
+  }
+  .group-sep:first-child{ margin-top:0; }
+  .group-sep .gtag{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--serif); font-weight:700; font-size:15px; letter-spacing:.06em;
+    color:var(--g-accent); white-space:nowrap;
+  }
+  .group-sep .gtag .gdot{ width:9px; height:9px; border-radius:50%; background:var(--g-accent); }
+  .group-sep .gtag .gcount{
+    font-family:var(--sans); font-weight:600; font-size:11px; letter-spacing:.02em;
+    color:var(--paper); background:var(--g-accent);
+    border-radius:999px; padding:1px 8px;
+  }
+  .group-sep .gline{
+    flex:1; height:0;
+    border-top:2px solid var(--g-accent);
+    opacity:.5;
+  }
+  .group-sep.g-prologue{ --g-accent:var(--c-prologue); }
+  .group-sep.g-normal  { --g-accent:var(--c-normal); }
+  .group-sep.g-battle  { --g-accent:var(--c-battle); }
+  .group-sep.g-ending  { --g-accent:var(--c-ending); }
+
+  /* ====== 카드 ====== */
+  .card{
+    --accent:var(--c-normal);
+    --accent-bg:var(--c-normal-bg);
+    position:relative;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:12px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+    display:flex; flex-direction:column;
+    transition:opacity .15s, filter .15s, box-shadow .15s;
+  }
+  .card::before{
+    content:""; position:absolute; left:0; top:0; bottom:0; width:5px;
+    background:var(--accent);
+  }
+  .card.type-prologue{ --accent:var(--c-prologue); --accent-bg:var(--c-prologue-bg); }
+  .card.type-normal  { --accent:var(--c-normal);   --accent-bg:var(--c-normal-bg); }
+  .card.type-battle  { --accent:var(--c-battle);   --accent-bg:var(--c-battle-bg); }
+  .card.type-ending  { --accent:var(--c-ending);   --accent-bg:var(--c-ending-bg); }
+
+  .card.off{
+    opacity:.58;
+    filter:grayscale(.5);
+    border-style:dashed;
+    border-color:var(--ink-faint);
+    box-shadow:none;
+  }
+  .card.off::before{ background:repeating-linear-gradient(transparent, transparent 4px, var(--accent) 4px, var(--accent) 8px); opacity:.6; }
+
+  /* 헤더 영역 */
+  .card-head{
+    background:var(--accent-bg);
+    padding:14px 16px 13px 18px;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .head-top{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .type-pill{
+    position:relative;
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:11px; font-weight:600; letter-spacing:.04em;
+    color:var(--accent);
+    background:var(--paper); border:1px solid var(--accent);
+    border-radius:999px; padding:3px 4px 3px 10px;
+  }
+  .type-pill .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  .type-pill select{
+    appearance:none; border:none; background:transparent;
+    font-family:var(--sans); font-size:11px; font-weight:600; color:var(--accent);
+    padding:0 18px 0 2px; cursor:pointer; letter-spacing:.04em;
+  }
+  .type-pill::after{
+    content:"▾"; position:absolute; right:9px; top:50%; transform:translateY(-50%);
+    font-size:9px; color:var(--accent); pointer-events:none;
+  }
+
+  /* 활성 토글 */
+  .toggle{ margin-left:auto; display:inline-flex; align-items:center; gap:8px; }
+  .toggle .lab{ font-size:11px; color:var(--ink-soft); letter-spacing:.03em; }
+  .switch{
+    position:relative; width:42px; height:23px; border-radius:999px;
+    background:var(--line); border:1px solid var(--line); cursor:pointer;
+    transition:background .15s, border-color .15s;
+  }
+  .switch .knob{
+    position:absolute; top:1.5px; left:1.5px; width:18px; height:18px; border-radius:50%;
+    background:var(--paper); box-shadow:0 1px 2px oklch(0.3 0 0 / .3);
+    transition:left .15s;
+  }
+  .card:not(.off) .switch{ background:var(--accent); border-color:var(--accent); }
+  .card:not(.off) .switch .knob{ left:21.5px; }
+
+  .name-input{
+    width:100%; border:none; background:transparent;
+    font-family:var(--serif); font-weight:700; font-size:20px; color:var(--ink);
+    letter-spacing:.01em; padding:2px 0; line-height:1.3;
+  }
+  .name-input::placeholder{ color:var(--ink-faint); font-weight:400; }
+  .name-input:focus{ outline:none; box-shadow:0 2px 0 var(--accent); }
+
+  /* 본문 */
+  .card-body{ padding:14px 18px 16px; display:flex; flex-direction:column; gap:14px; }
+
+  .field{ display:flex; flex-direction:column; gap:5px; }
+  .field > label{
+    font-size:10.5px; font-weight:600; letter-spacing:.10em;
+    color:var(--ink-faint); text-transform:uppercase;
+  }
+  .inp, .ta{
+    width:100%; border:1px solid var(--line-soft); border-radius:7px;
+    background:oklch(0.975 0.008 80); color:var(--ink);
+    font-family:var(--sans); font-size:13.5px; line-height:1.55;
+    padding:8px 10px; transition:border-color .12s, background .12s;
+    resize:none;
+  }
+  .inp:focus, .ta:focus{ outline:none; border-color:var(--accent); background:var(--paper); }
+  .inp::placeholder, .ta::placeholder{ color:var(--ink-faint); }
+  .ta{ overflow:hidden; min-height:38px; }
+
+  .row-2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+  /* 가중치 */
+  .weight-field .wtop{ display:flex; align-items:center; justify-content:space-between; }
+  .weight-num{
+    font-family:var(--serif); font-size:15px; font-weight:700; color:var(--accent);
+    font-variant-numeric:tabular-nums;
+  }
+  .weight-num small{ color:var(--ink-faint); font-weight:400; font-size:11px; font-family:var(--sans); }
+  .wbar{ display:flex; gap:3px; margin-top:4px; }
+  .wseg{
+    flex:1; height:18px; border-radius:3px;
+    background:var(--line-soft); border:1px solid transparent;
+    cursor:pointer; transition:background .1s, transform .06s;
+    display:grid; place-items:center;
+    font-size:10px; font-weight:600; font-family:var(--sans);
+    font-variant-numeric:tabular-nums; line-height:1;
+    color:var(--ink-faint); user-select:none;
+  }
+  .wseg:hover{ transform:scaleY(1.12); }
+  .wseg.on{ background:var(--accent); color:var(--paper); }
+
+  /* 선택지 */
+  .choices-head{ display:flex; align-items:center; justify-content:space-between; }
+  .choices-head .ttl{
+    font-size:10.5px; font-weight:600; letter-spacing:.10em;
+    color:var(--ink-faint); text-transform:uppercase;
+  }
+  .mini-btn{
+    border:1px dashed var(--line); background:transparent; color:var(--ink-soft);
+    border-radius:6px; padding:3px 9px; font-size:11px; letter-spacing:.02em;
+  }
+  .mini-btn:hover{ border-color:var(--accent); color:var(--accent); }
+  .choices{ display:flex; flex-direction:column; gap:9px; }
+  .choice{
+    position:relative;
+    border:1px solid var(--line-soft); border-left:3px solid var(--accent);
+    border-radius:8px; background:oklch(0.97 0.01 78);
+    padding:9px 10px 10px 11px;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .choice .cidx{
+    position:absolute; top:-8px; left:9px;
+    background:var(--accent); color:var(--paper);
+    font-size:10px; font-weight:700; border-radius:4px; padding:1px 6px;
+    letter-spacing:.04em;
+  }
+  .choice .crow{ display:flex; align-items:center; gap:7px; }
+  .choice .ckey{
+    flex:none; width:34px; font-size:10px; font-weight:600; color:var(--ink-faint);
+    letter-spacing:.04em; text-align:right; padding-top:2px;
+  }
+  .choice .cinp{
+    flex:1; border:none; border-bottom:1px solid var(--line-soft); background:transparent;
+    font-family:var(--sans); font-size:12.5px; color:var(--ink); padding:3px 1px;
+    transition:border-color .12s;
+  }
+  .choice .cinp:focus{ outline:none; border-color:var(--accent); }
+  .choice .cinp::placeholder{ color:var(--ink-faint); }
+  .choice .cinp.is-text{ font-weight:600; }
+  .choice .cdel{
+    position:absolute; top:6px; right:7px;
+    border:none; background:transparent; color:var(--ink-faint);
+    font-size:14px; line-height:1; padding:2px 4px; border-radius:4px;
+  }
+  .choice .cdel:hover{ color:var(--c-battle); background:oklch(0.94 0.03 28); }
+
+  /* 카드 푸터 */
+  .card-foot{
+    display:flex; gap:8px; padding:11px 16px 13px 18px;
+    border-top:1px solid var(--line-soft); background:oklch(0.945 0.012 76);
+    margin-top:auto;
+  }
+  .foot-btn{
+    border:1px solid var(--line); background:var(--paper); color:var(--ink-soft);
+    border-radius:7px; padding:6px 11px; font-size:12px; letter-spacing:.02em;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  .foot-btn:hover{ border-color:var(--ink-faint); color:var(--ink); }
+  .foot-btn.danger:hover{ border-color:var(--c-battle); color:var(--c-battle); background:oklch(0.95 0.025 28); }
+  .foot-btn .ic{ font-size:13px; }
+  .foot-spacer{ margin-left:auto; }
+
+  /* 빈 상태 */
+  .empty{
+    grid-column:1/-1; text-align:center; padding:80px 20px; color:var(--ink-faint);
+    border:2px dashed var(--line); border-radius:14px;
+  }
+  .empty h2{ font-family:var(--serif); font-weight:700; color:var(--ink-soft); margin:0 0 8px; }
+
+  /* ====== 모달 (JSON) ====== */
+  .overlay{
+    position:fixed; inset:0; z-index:80; display:none;
+    align-items:center; justify-content:center;
+    background:oklch(0.20 0.01 60 / 0.46); backdrop-filter:blur(3px);
+  }
+  .overlay.show{ display:flex; }
+  .modal{
+    width:min(760px, 92vw); max-height:84vh; display:flex; flex-direction:column;
+    background:var(--paper); border:1px solid var(--line); border-radius:14px;
+    box-shadow:0 24px 60px oklch(0.2 0.02 60 / .4); overflow:hidden;
+  }
+  .modal-head{
+    display:flex; align-items:center; gap:12px; padding:16px 20px;
+    border-bottom:1px solid var(--line);
+  }
+  .modal-head h3{ font-family:var(--serif); margin:0; font-size:17px; letter-spacing:.03em; }
+  .modal-head .x{ margin-left:auto; border:none; background:transparent; font-size:20px; color:var(--ink-soft); padding:2px 8px; border-radius:6px; }
+  .modal-head .x:hover{ background:var(--paper-2); }
+  .modal pre{
+    margin:0; padding:18px 20px; overflow:auto; flex:1;
+    font-family:"SF Mono","Consolas","D2Coding",monospace; font-size:12px; line-height:1.6;
+    color:var(--ink); background:oklch(0.965 0.01 78); white-space:pre; tab-size:2;
+  }
+  .modal-foot{ display:flex; gap:10px; padding:14px 20px; border-top:1px solid var(--line); }
+
+  /* 토스트 */
+  .toast{
+    position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--paper); padding:11px 20px; border-radius:9px;
+    font-size:13px; letter-spacing:.02em; opacity:0; pointer-events:none;
+    transition:opacity .2s, transform .2s; z-index:90;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ====== 카드 id 입력 ====== */
+  .id-row{ display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .id-label{
+    font-size:10.5px; letter-spacing:.14em; opacity:.55;
+    text-transform:uppercase;
+  }
+  .id-input{
+    flex:1; min-width:0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size:12px; background:transparent; border:none;
+    border-bottom:1px dotted rgba(0,0,0,.18);
+    padding:3px 0; color:inherit; opacity:.75;
+  }
+  .id-input:focus{ outline:none; border-bottom-style:solid; opacity:1; }
+
+  /* ====== 데이터 파일 경로 안내 ====== */
+  .load-group{ position:relative; display:inline-flex; gap:6px; }
+  .btn.icon-only{ padding:8px 10px; min-width:34px; }
+  .info-pop{
+    position:absolute; top:calc(100% + 8px); right:0;
+    background:var(--ink); color:var(--paper);
+    border-radius:8px; padding:12px 14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);
+    font-size:12px; line-height:1.55;
+    min-width:340px; max-width:560px;
+    z-index:80; opacity:0; transform:translateY(-4px);
+    pointer-events:none; transition:opacity .15s, transform .15s;
+  }
+  .info-pop.show{ opacity:1; transform:translateY(0); pointer-events:auto; }
+  .info-pop .pop-label{ opacity:.65; letter-spacing:.1em; font-size:10.5px; margin-bottom:4px; }
+  .info-pop .pop-path{
+    font-family:var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    word-break:break-all; user-select:all; padding:6px 0;
+  }
+  .info-pop .pop-meta{ opacity:.7; margin-top:6px; }
+  .info-pop .pop-actions{ display:flex; gap:6px; margin-top:10px; }
+  .info-pop .pop-btn{
+    background:rgba(255,255,255,.12); color:var(--paper);
+    border:1px solid rgba(255,255,255,.18);
+    border-radius:6px; padding:5px 10px; font-size:11.5px; cursor:pointer;
+  }
+  .info-pop .pop-btn:hover{ background:rgba(255,255,255,.18); }
+  .info-pop::before{
+    content:""; position:absolute; top:-6px; right:14px;
+    width:10px; height:10px; background:var(--ink); transform:rotate(45deg);
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="seal"><span class="chip">俠</span>이벤트 카드 편집기</span>
+      <span class="sub">무협 텍스트 어드벤처 · 기획 내부 도구</span>
+    </div>
+    <div class="toolbar">
+      <span class="counter" id="counter">카드 <b>0</b> · 활성 <b>0</b></span>
+      <span class="load-group">
+        <button class="btn" id="btnLoadFile" title="서버의 data.json에서 불러옴"><span class="ic">📁</span>파일 불러오기</button>
+        <button class="btn icon-only" id="btnLoadInfo" title="데이터 파일 경로 보기">?</button>
+        <div class="info-pop" id="infoPop" role="dialog" aria-label="데이터 파일 정보">
+          <div class="pop-label">데이터 파일 경로</div>
+          <div class="pop-path" id="infoPath">—</div>
+          <div class="pop-meta" id="infoMeta">—</div>
+          <div class="pop-actions">
+            <button class="pop-btn" id="infoCopy">경로 복사</button>
+            <button class="pop-btn" id="infoClose">닫기</button>
+          </div>
+        </div>
+      </span>
+      <button class="btn" id="btnSaveFile" title="서버의 data.json에 저장"><span class="ic">💾</span>파일 저장</button>
+      <button class="btn" id="btnCopy"><span class="ic">⧉</span>JSON 복사</button>
+      <button class="btn" id="btnExport"><span class="ic">↧</span>JSON 내보내기</button>
+      <button class="btn primary" id="btnAdd"><span class="ic">＋</span>카드 추가</button>
+    </div>
+  </header>
+
+  <main class="board" id="board"></main>
+
+  <!-- JSON 모달 -->
+  <div class="overlay" id="overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>이벤트 카드 JSON</h3>
+        <button class="x" id="modalClose">×</button>
+      </div>
+      <pre id="jsonView"></pre>
+      <div class="modal-foot">
+        <button class="btn primary" id="modalCopy"><span class="ic">⧉</span>클립보드로 복사</button>
+        <button class="btn" id="modalDownload"><span class="ic">↧</span>.json 파일로 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const STORAGE_KEY = "wuxia_event_cards_v1";
+
+  const TYPES = {
+    "프롤로그":   { cls:"type-prologue" },
+    "일반이벤트": { cls:"type-normal" },
+    "전투이벤트": { cls:"type-battle" },
+    "엔딩이벤트": { cls:"type-ending" }
+  };
+  // 보드 정렬 순서: 프롬로그 → 일반 → 전투 → 엔딩
+  const TYPE_ORDER = Object.keys(TYPES);
+  function typeRank(t){ const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; }
+
+  /* ---------- 유틸 ---------- */
+  const uid = () => "ev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,7);
+  const clamp = (n,a,b)=> Math.max(a, Math.min(b, n));
+  const $ = (s,r=document)=> r.querySelector(s);
+  const el = (tag, cls)=>{ const e=document.createElement(tag); if(cls) e.className=cls; return e; };
+
+  let saveTimer = null;
+  function saveSoon(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cards)); }catch(e){}
+    }, 250);
+  }
+
+  function autoGrow(ta){
+    ta.style.height = "auto";
+    ta.style.height = (ta.scrollHeight + 2) + "px";
+  }
+
+  function newChoice(){ return { text:"", cond:"", result:"" }; }
+
+  function blankCard(){
+    return {
+      id: uid(),
+      name: "",
+      type: "일반이벤트",
+      active: true,
+      weight: 5,
+      region: "",
+      condition: "",
+      situation: "",
+      choices: [ newChoice() ],
+      next: "",
+      memo: ""
+    };
+  }
+
+  /* ---------- 상태 ---------- */
+  const state = { cards: [] };
+
+  function load(){
+    let raw=null;
+    try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){}
+    if(raw){
+      try{
+        const parsed = JSON.parse(raw);
+        if(Array.isArray(parsed)){ state.cards = parsed.map(normalize); return; }
+      }catch(e){}
+    }
+    state.cards = seedCards();
+    saveSoon();
+  }
+
+  function normalize(c){
+    return {
+      id: c.id || uid(),
+      name: c.name || "",
+      type: TYPES[c.type] ? c.type : "일반이벤트",
+      active: c.active !== false,
+      weight: clamp(parseInt(c.weight,10)||5, 1, 10),
+      region: c.region || "",
+      condition: c.condition || "",
+      situation: c.situation || "",
+      choices: Array.isArray(c.choices) && c.choices.length
+        ? c.choices.map(ch=>({ text:ch.text||"", cond:ch.cond||"", result:ch.result||"" }))
+        : [ newChoice() ],
+      next: c.next || "",
+      memo: c.memo || ""
+    };
+  }
+
+  /* ---------- 렌더 ---------- */
+  const board = $("#board");
+
+  function render(){
+    board.innerHTML = "";
+    if(state.cards.length === 0){
+      const e = el("div","empty");
+      e.innerHTML = '<h2>아직 카드가 없습니다</h2><div>우측 상단 “카드 추가”로 첫 이벤트 카드를 만들어 보세요.</div>';
+      board.appendChild(e);
+    } else {
+      // 타입 순서로 정렬 (동일 타입 내에서는 기존 순서 유지)
+      const ordered = state.cards
+        .map((c, i) => ({ c, i }))
+        .sort((a, b) => (typeRank(a.c.type) - typeRank(b.c.type)) || (a.i - b.i))
+        .map(x => x.c);
+      // 타입 그룹마다 구분선 삽입
+      const GSUFFIX = { "프롬로그":"g-prologue", "일반이벤트":"g-normal", "전투이벤트":"g-battle", "엔딩이벤트":"g-ending" };
+      const counts = {};
+      ordered.forEach(c=>{ counts[c.type] = (counts[c.type]||0) + 1; });
+      let lastType = null;
+      ordered.forEach(card => {
+        if(card.type !== lastType){
+          board.appendChild(buildGroupSep(card.type, GSUFFIX[card.type], counts[card.type]));
+          lastType = card.type;
+        }
+        board.appendChild(buildCard(card));
+      });
+    }
+    // textarea 높이 초기화
+    requestAnimationFrame(()=> board.querySelectorAll("textarea").forEach(autoGrow));
+    updateCounter();
+  }
+
+  function updateCounter(){
+    const total = state.cards.length;
+    const active = state.cards.filter(c=>c.active).length;
+    $("#counter").innerHTML = "카드 <b>"+total+"</b> · 활성 <b>"+active+"</b>";
+  }
+
+  function applyTypeClass(node, card){
+    Object.values(TYPES).forEach(t=> node.classList.remove(t.cls));
+    node.classList.add(TYPES[card.type].cls);
+  }
+
+  function buildGroupSep(typeName, suffixCls, count){
+    const sep = el("div", "group-sep " + suffixCls);
+    const tag = el("div","gtag");
+    tag.appendChild(el("span","gdot"));
+    const t = document.createTextNode(typeName);
+    tag.appendChild(t);
+    const cnt = el("span","gcount"); cnt.textContent = count; tag.appendChild(cnt);
+    sep.appendChild(tag);
+    sep.appendChild(el("div","gline"));
+    return sep;
+  }
+
+  function buildField(labelText, value, key, card, multiline){
+    const f = el("div","field");
+    const lab = el("label"); lab.textContent = labelText; f.appendChild(lab);
+    let input;
+    if(multiline){
+      input = el("textarea","ta");
+      input.rows = 1; input.value = value;
+      input.addEventListener("input", ()=>{ card[key]=input.value; autoGrow(input); saveSoon(); });
+    } else {
+      input = el("input","inp"); input.type="text"; input.value=value;
+      input.addEventListener("input", ()=>{ card[key]=input.value; saveSoon(); });
+    }
+    f.appendChild(input);
+    return f;
+  }
+
+  function buildCard(card){
+    const node = el("div","card");
+    if(!card.active) node.classList.add("off");
+    applyTypeClass(node, card);
+
+    /* ===== 헤더 ===== */
+    const head = el("div","card-head");
+    const headTop = el("div","head-top");
+
+    // 타입 선택 pill
+    const pill = el("span","type-pill");
+    const dot = el("span","dot");
+    const sel = el("select");
+    Object.keys(TYPES).forEach(t=>{
+      const o=el("option"); o.value=t; o.textContent=t; if(t===card.type)o.selected=true; sel.appendChild(o);
+    });
+    sel.addEventListener("change", ()=>{
+      card.type = sel.value; saveSoon(); render();
+    });
+    pill.appendChild(dot); pill.appendChild(sel);
+    headTop.appendChild(pill);
+
+    // 활성 토글
+    const tog = el("div","toggle");
+    const lab = el("span","lab"); lab.textContent = card.active ? "활성" : "비활성";
+    const sw = el("div","switch"); sw.setAttribute("role","switch");
+    sw.setAttribute("aria-checked", String(card.active));
+    sw.appendChild(el("div","knob"));
+    sw.addEventListener("click", ()=>{
+      card.active = !card.active;
+      node.classList.toggle("off", !card.active);
+      lab.textContent = card.active ? "활성" : "비활성";
+      sw.setAttribute("aria-checked", String(card.active));
+      updateCounter(); saveSoon();
+    });
+    tog.appendChild(lab); tog.appendChild(sw);
+    headTop.appendChild(tog);
+    head.appendChild(headTop);
+
+    // 이벤트명
+    const name = el("input","name-input");
+    name.type="text"; name.value=card.name; name.placeholder="이벤트명을 입력…";
+    name.addEventListener("input", ()=>{ card.name=name.value; saveSoon(); });
+    head.appendChild(name);
+
+    // id (게임 엔진에서 카드를 가리키는 식별자)
+    const idRow = el("div","id-row");
+    const idLab = el("span","id-label"); idLab.textContent = "id";
+    const idInp = el("input","id-input");
+    idInp.type = "text"; idInp.value = card.id;
+    idInp.placeholder = "snake_case 권장 (비우면 자동)";
+    idInp.spellcheck = false;
+    idInp.addEventListener("input", ()=>{ card.id = idInp.value; saveSoon(); });
+    idInp.addEventListener("blur", ()=>{
+      if(!idInp.value.trim()){
+        card.id = uid();
+        idInp.value = card.id;
+        saveSoon();
+      }
+    });
+    idRow.appendChild(idLab); idRow.appendChild(idInp);
+    head.appendChild(idRow);
+
+    node.appendChild(head);
+
+    /* ===== 본문 ===== */
+    const body = el("div","card-body");
+
+    // 가중치 + 지역 (2열)
+    const row = el("div","row-2");
+
+    // 가중치
+    const wf = el("div","field weight-field");
+    const wtop = el("div","wtop");
+    const wl = el("label"); wl.textContent="발생 가중치"; wtop.appendChild(wl);
+    const wnum = el("span","weight-num");
+    wtop.appendChild(wnum);
+    wf.appendChild(wtop);
+    const wbar = el("div","wbar");
+    const segs = [];
+    for(let i=1;i<=10;i++){
+      const s = el("div","wseg"); s.dataset.v=i;
+      s.textContent = i;
+      s.title = "가중치 " + i;
+      s.addEventListener("click", ()=>{ card.weight=i; paintWeight(); saveSoon(); });
+      segs.push(s); wbar.appendChild(s);
+    }
+    function paintWeight(){
+      wnum.innerHTML = card.weight + " <small>/ 10</small>";
+      segs.forEach((s,idx)=> s.classList.toggle("on", (idx+1) <= card.weight));
+    }
+    paintWeight();
+    wf.appendChild(wbar);
+    row.appendChild(wf);
+
+    // 지역
+    row.appendChild(buildField("지역", card.region, "region", card, false));
+    body.appendChild(row);
+
+    // 발생 조건 / 상황
+    body.appendChild(buildField("발생 조건", card.condition, "condition", card, true));
+    body.appendChild(buildField("상황", card.situation, "situation", card, true));
+
+    // 선택지
+    body.appendChild(buildChoices(card));
+
+    // 후속 이벤트 / 메모
+    body.appendChild(buildField("후속 이벤트", card.next, "next", card, false));
+    body.appendChild(buildField("메모", card.memo, "memo", card, true));
+
+    node.appendChild(body);
+
+    /* ===== 푸터 ===== */
+    const foot = el("div","card-foot");
+    const dup = el("button","foot-btn"); dup.innerHTML='<span class="ic">⎘</span>복제';
+    dup.addEventListener("click", ()=> duplicateCard(card.id));
+    const del = el("button","foot-btn danger"); del.innerHTML='<span class="ic">🗑</span>삭제';
+    del.addEventListener("click", ()=> deleteCard(card.id, card.name));
+    foot.appendChild(dup);
+    const sp = el("div","foot-spacer"); foot.appendChild(sp);
+    foot.appendChild(del);
+    node.appendChild(foot);
+
+    return node;
+  }
+
+  function buildChoices(card){
+    const wrap = el("div","field");
+    const head = el("div","choices-head");
+    const ttl = el("span","ttl"); ttl.textContent="선택지";
+    const add = el("button","mini-btn"); add.textContent="＋ 선택지 추가";
+    head.appendChild(ttl); head.appendChild(add);
+    wrap.appendChild(head);
+
+    const list = el("div","choices");
+    wrap.appendChild(list);
+
+    function renderList(){
+      list.innerHTML="";
+      card.choices.forEach((ch, i)=> list.appendChild(buildChoice(card, ch, i, renderList)));
+      requestAnimationFrame(()=> list.querySelectorAll("textarea").forEach(autoGrow));
+    }
+    add.addEventListener("click", ()=>{
+      card.choices.push(newChoice()); renderList(); saveSoon();
+    });
+    renderList();
+    return wrap;
+  }
+
+  function buildChoice(card, ch, idx, rerender){
+    const c = el("div","choice");
+    const badge = el("span","cidx"); badge.textContent = "선택 "+(idx+1); c.appendChild(badge);
+
+    const del = el("button","cdel"); del.innerHTML="×"; del.title="선택지 삭제";
+    del.addEventListener("click", ()=>{
+      card.choices.splice(idx,1);
+      if(card.choices.length===0) card.choices.push(newChoice());
+      rerender(); saveSoon();
+    });
+    c.appendChild(del);
+
+    const fields = [
+      ["텍스트","text","어떤 행동을 보여줄지", true],
+      ["조건","cond","발생/표시 조건 (없으면 비움)", false],
+      ["결과","result","선택 시 변화·분기", false]
+    ];
+    fields.forEach(([k,key,ph,isText])=>{
+      const rowEl = el("div","crow");
+      const keyl = el("span","ckey"); keyl.textContent=k;
+      const inp = el("input","cinp" + (isText?" is-text":""));
+      inp.type="text"; inp.value=ch[key]; inp.placeholder=ph;
+      inp.addEventListener("input", ()=>{ ch[key]=inp.value; saveSoon(); });
+      rowEl.appendChild(keyl); rowEl.appendChild(inp);
+      c.appendChild(rowEl);
+    });
+    return c;
+  }
+
+  /* ---------- 카드 조작 ---------- */
+  function addCard(){
+    const c = blankCard();
+    state.cards.push(c);
+    render(); saveSoon();
+    // 새 카드로 스크롤 + 이름 포커스
+    requestAnimationFrame(()=>{
+      const cards = board.querySelectorAll(".card");
+      const last = cards[cards.length-1];
+      if(last){ const n=last.querySelector(".name-input"); if(n) n.focus(); }
+    });
+  }
+  function duplicateCard(id){
+    const i = state.cards.findIndex(c=>c.id===id);
+    if(i<0) return;
+    const copy = normalize(JSON.parse(JSON.stringify(state.cards[i])));
+    copy.id = uid();
+    copy.name = (state.cards[i].name || "이름 없는 이벤트") + " (복제)";
+    state.cards.splice(i+1, 0, copy);
+    render(); saveSoon();
+  }
+  function deleteCard(id, name){
+    const label = name ? "“"+name+"”" : "이 카드";
+    if(!confirm(label+"를 삭제할까요?")) return;
+    state.cards = state.cards.filter(c=>c.id!==id);
+    render(); saveSoon();
+  }
+
+  /* ---------- JSON ---------- */
+  function exportData(){
+    return state.cards.map(c=>({
+      id: c.id,
+      이벤트명: c.name,
+      이벤트타입: c.type,
+      활성상태: c.active ? "on" : "off",
+      발생가중치: c.weight,
+      지역: c.region,
+      발생조건: c.condition,
+      상황: c.situation,
+      선택지: c.choices.map(ch=>({ 텍스트:ch.text, 조건:ch.cond, 결과:ch.result })),
+      후속이벤트: c.next,
+      메모: c.memo
+    }));
+  }
+  function jsonString(){ return JSON.stringify(exportData(), null, 2); }
+
+  function copyText(txt, msg){
+    const done = ()=> toast(msg||"복사되었습니다");
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt,done));
+    } else fallbackCopy(txt, done);
+  }
+  function fallbackCopy(txt, done){
+    const ta=el("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); done(); }catch(e){ toast("복사 실패 — 수동으로 선택해 주세요"); }
+    document.body.removeChild(ta);
+  }
+  function downloadJSON(){
+    const blob = new Blob([jsonString()], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = el("a"); a.href=url;
+    a.download = "event-cards-" + new Date().toISOString().slice(0,10) + ".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+    toast(".json 파일을 저장했습니다");
+  }
+
+  /* ---------- 모달 ---------- */
+  const overlay = $("#overlay");
+  function openModal(){ $("#jsonView").textContent = jsonString(); overlay.classList.add("show"); }
+  function closeModal(){ overlay.classList.remove("show"); }
+
+  /* ---------- 토스트 ---------- */
+  let toastTimer=null;
+  function toast(msg){
+    const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"), 1900);
+  }
+
+  /* ---------- 이벤트 바인딩 ---------- */
+  $("#btnAdd").addEventListener("click", addCard);
+  $("#btnExport").addEventListener("click", openModal);
+  $("#btnCopy").addEventListener("click", ()=> copyText(jsonString(), "JSON을 클립보드에 복사했습니다"));
+  $("#modalClose").addEventListener("click", closeModal);
+  $("#modalCopy").addEventListener("click", ()=> copyText(jsonString(), "JSON을 클립보드에 복사했습니다"));
+  $("#modalDownload").addEventListener("click", downloadJSON);
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) closeModal(); });
+  document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") closeModal(); });
+
+  /* ---------- 서버 파일 동기화 (수동) ---------- */
+  // 저장 포맷은 exportData()와 동일한 한글 키 — 다운로드한 .json도 그대로 불러올 수 있음.
+  function fromExportFormat(arr){
+    return arr.map(c => normalize({
+      id:        c.id,
+      name:      c.이벤트명,
+      type:      c.이벤트타입,
+      active:    c.활성상태 !== "off",
+      weight:    c.발생가중치,
+      region:    c.지역,
+      condition: c.발생조건,
+      situation: c.상황,
+      choices:  (c.선택지 || []).map(ch => ({
+        text:   ch.텍스트,
+        cond:   ch.조건,
+        result: ch.결과
+      })),
+      next:      c.후속이벤트,
+      memo:      c.메모
+    }));
+  }
+  async function saveToFile(){
+    try{
+      const res = await fetch("/data", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: jsonString()
+      });
+      if(!res.ok) throw new Error(await res.text());
+      toast("data.json에 저장했습니다");
+    }catch(e){
+      toast("저장 실패 — 서버 실행 중인지 확인하세요");
+    }
+  }
+  async function loadFromFile(){
+    try{
+      const res = await fetch("/data");
+      if(!res.ok) throw new Error(res.status);
+      const arr = await res.json();
+      if(!Array.isArray(arr) || arr.length === 0){
+        toast("data.json이 비어 있습니다");
+        return;
+      }
+      if(!confirm("현재 편집 내용을 덮어쓰고 data.json을 불러올까요?")) return;
+      state.cards = fromExportFormat(arr);
+      render();
+      saveSoon();
+      toast("data.json에서 불러왔습니다");
+    }catch(e){
+      toast("불러오기 실패 — 서버 실행 중인지 확인하세요");
+    }
+  }
+  $("#btnSaveFile").addEventListener("click", saveToFile);
+  $("#btnLoadFile").addEventListener("click", loadFromFile);
+
+  /* ---------- 데이터 파일 경로 popover ---------- */
+  const infoPop = $("#infoPop");
+  function formatBytes(n){
+    if(n < 1024) return n + " B";
+    if(n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+    return (n/1024/1024).toFixed(2) + " MB";
+  }
+  function formatMtime(iso){
+    try{
+      const d = new Date(iso);
+      return d.toLocaleString('ko-KR', { hour12:false });
+    }catch(e){ return iso; }
+  }
+  async function refreshInfo(){
+    try{
+      const r = await fetch("/data/info");
+      if(!r.ok) throw new Error(r.status);
+      const info = await r.json();
+      $("#infoPath").textContent = info.path || "(알 수 없음)";
+      if(info.exists){
+        $("#infoMeta").textContent =
+          "상태: 존재 · " + formatBytes(info.size) + " · 수정 " + formatMtime(info.mtime);
+      }else{
+        $("#infoMeta").textContent = "상태: 아직 없음 (파일 저장 시 생성됨)";
+      }
+    }catch(e){
+      $("#infoPath").textContent = "서버 응답 없음";
+      $("#infoMeta").textContent = "node server.mjs 가 실행 중인지 확인하세요";
+    }
+  }
+  async function toggleInfo(){
+    const willShow = !infoPop.classList.contains("show");
+    if(willShow) await refreshInfo();
+    infoPop.classList.toggle("show", willShow);
+  }
+  $("#btnLoadInfo").addEventListener("click", (e)=>{ e.stopPropagation(); toggleInfo(); });
+  $("#infoClose").addEventListener("click", ()=> infoPop.classList.remove("show"));
+  $("#infoCopy").addEventListener("click", ()=>{
+    copyText($("#infoPath").textContent, "경로를 복사했습니다");
+  });
+  document.addEventListener("click", (e)=>{
+    if(!infoPop.classList.contains("show")) return;
+    if(infoPop.contains(e.target) || e.target.id === "btnLoadInfo") return;
+    infoPop.classList.remove("show");
+  });
+  document.addEventListener("keydown", (e)=>{
+    if(e.key === "Escape") infoPop.classList.remove("show");
+  });
+
+  /* ---------- 더미 데이터 ---------- */
+  function seedCards(){
+    return [
+      normalize({
+        name:"사부의 유언",
+        type:"프롤로그", active:true, weight:10,
+        region:"화산 자락 초가",
+        condition:"게임 시작 직후 단 1회",
+        situation:"스러져 가는 등불 아래, 평생을 길러 준 사부가 마지막 숨을 고른다. “강호는… 칼보다 사람이 무섭다.” 사부는 손때 묻은 검 한 자루를 네 손에 쥐여 준다.",
+        choices:[
+          { text:"사부의 유지를 받든다", cond:"없음", result:"정파 성향 +3, 사문검 획득" },
+          { text:"오직 복수만을 다짐한다", cond:"없음", result:"마공 친화 +2, 살의 +1" }
+        ],
+        next:"하산 첫날",
+        memo:"시작 성향 결정 분기. 두 선택지가 이후 전체 톤을 가른다."
+      }),
+      normalize({
+        name:"청운현 가도의 노인",
+        type:"일반이벤트", active:true, weight:6,
+        region:"청운현 가도",
+        condition:"하산 후 청운현 가도 첫 진입 시",
+        situation:"청운현으로 향하는 흙길, 짐을 잔뜩 진 노인이 길가에 주저앉아 거친 숨을 몰아쉰다. 등에 진 봇짐이 진창에 빠져 옴짝달싹 못 한다.",
+        choices:[
+          { text:"봇짐을 대신 들어 옮겨 준다", cond:"근력 ≥ 3", result:"노인 호감 +2, 청운현 객잔 정보 획득" },
+          { text:"가진 은자를 쥐여 준다", cond:"은자 ≥ 5", result:"은자 -5, 명성 +1" },
+          { text:"못 본 척 지나친다", cond:"없음", result:"이동 시간 단축, 노인 호감 -1" }
+        ],
+        next:"청운현 객잔의 재회",
+        memo:"초반 인성 분기 테스트용. 노인은 후반 은거 고수로 재등장 가능."
+      }),
+      normalize({
+        name:"흑풍령의 매복",
+        type:"전투이벤트", active:true, weight:5,
+        region:"흑풍령 고갯길",
+        condition:"흑풍령 진입 · 야간",
+        situation:"좁은 고갯길 양옆 수풀에서 살기가 번뜩인다. 흑풍채 산적 다섯이 병장기를 치켜들고 길을 막아선다.",
+        choices:[
+          { text:"정면으로 돌파한다", cond:"내공 ≥ 4", result:"전투 개시 (난이도 中)" },
+          { text:"두목과 협상한다", cond:"언변 ≥ 3", result:"통행세 은자 -10, 전투 회피" },
+          { text:"어둠을 틈타 달아난다", cond:"경공 ≥ 3", result:"전투 회피, 봇짐 일부 분실" }
+        ],
+        next:"",
+        memo:"첫 전투 튜토리얼 트리거."
+      }),
+      normalize({
+        name:"강호를 떠나는 날",
+        type:"엔딩이벤트", active:false, weight:3,
+        region:"낙향 길목",
+        condition:"명성 ≥ 80 · 정파 성향 우세 · 주요 원수 처치 완료",
+        situation:"노을이 강호를 붉게 물들인다. 등 뒤로 멀어지는 무림을 돌아보며, 당신은 검을 거두고 고향으로 향하는 길에 오른다.",
+        choices:[
+          { text:"검을 묻고 평범한 삶을 택한다", cond:"없음", result:"‘귀향’ 엔딩" },
+          { text:"후학을 위해 무관을 연다", cond:"명망 ≥ 90", result:"‘사표(師表)’ 엔딩" }
+        ],
+        next:"",
+        memo:"정파 굿엔딩 계열. 비활성 표시 예시로 off 상태로 프리로드."
+      })
+    ];
+  }
+
+  /* ---------- 시작 ---------- */
+  load();
+  render();
+})();
+</script>
+</body>
+</html>
