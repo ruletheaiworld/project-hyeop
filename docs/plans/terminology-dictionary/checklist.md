@@ -28,7 +28,7 @@
 
 ## 3. 마무리
 
-- [ ] 커밋 (CLAUDE.md commit_protocol 따름 — `docs:` 타입)
+- [x] 커밋 (`3b77917` — docs: dictionary.md SSOT 도입 및 능력치 표기 통일)
 - [x] 본 checklist 의 미체크 항목이 남았으면 사유 메모 — eventEditor 표기 점검은 1차 범위 제외 항목이라 의도적으로 미실시
 - [ ] 2차 작업(상태값 정리)·3차 작업(지역·이벤트 타입) 별도 plan 으로 큐잉할지 결정 — **사용자 결정 필요**
 
