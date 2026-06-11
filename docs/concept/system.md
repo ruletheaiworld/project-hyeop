@@ -47,8 +47,7 @@
 | `sect` | 문파 소속 | `string \| null` | 소속 문파명 (예: `'화산파'`). 없으면 `null` |
 | `master` | 사부 | `string \| null` | 사부 이름. 성장 보너스/특수 이벤트 게이트 |
 | `wanted` | 현상수배 | `boolean` | 자동 — `renown ≤ −8` 이면 활성 |
-| `kills` | 살업 | int (≥0) | 살인 누적. 마교 엔딩 게이트 |
-| `demonic` | 마공입문 | `boolean` | 마공 비급을 익혔는지 |
+| `kills` | 살업 | int (≥0) | 살인 누적. |
 | `bonds` | 인연 | `string[]` | 이름 있는 NPC와의 관계 (예: `'노인'`, `'소연'`) |
 | `grudges` | 원한 관계 | `string[]` | 원한 맺은 NPC (예: `'노인'`, `'흑풍채 두목'`) |
 | `fortunes` | 기연 | `string[]` | 획득한 비급·보물·깨달음 식별자 |
@@ -111,7 +110,8 @@ type Choice = {
 | 키 | 타입 | 의미 |
 |---|---|---|
 | `name` | `string` | 플레이어가 정한 이름. 빈 문자열이면 `'이름 없는 강호인'`으로 표기 |
-| `origin` | `'무관' \| '서생' \| '장사꾼'` | 출신. 시작 능력치 보너스 결정 |
+| `origin` | `'낭인' \| '후기지수' \| '살수'` | 출신. 시작 능력치 보너스 결정 |
+| `motive` | `'복수' \| '생존' \| '명성' \| '자유' \| '진실'` | 강호에 나온 동기. 엔딩 분기·평가 텍스트에 영향. 게임 중 불변 |
 | `startedAt` | int | 게임 시작 unix millis |
 
 ---
@@ -122,7 +122,8 @@ type Choice = {
 type GameState = {
   // 캐릭터 메타
   name: string;
-  origin: '무관' | '서생' | '장사꾼';
+  origin: '낭인' | '후기지수' | '살수';
+  motive: '복수' | '생존' | '명성' | '자유' | '진실';
   startedAt: number;
 
   // 능력치
@@ -144,7 +145,6 @@ type GameState = {
     master: string | null;
     wanted: boolean;
     kills: number;
-    demonic: boolean;
     bonds: string[];
     grudges: string[];
     fortunes: string[];
@@ -179,7 +179,8 @@ type GameState = {
 ```json
 {
   "name": "",
-  "origin": "무관",
+  "origin": "낭인",
+  "motive": "생존",
   "startedAt": 1717200000000,
 
   "stats": {
@@ -195,7 +196,6 @@ type GameState = {
     "master": null,
     "wanted": false,
     "kills": 0,
-    "demonic": false,
     "bonds": [],
     "grudges": [],
     "fortunes": []
