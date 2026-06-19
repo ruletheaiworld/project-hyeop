@@ -240,14 +240,17 @@
     font-family:var(--sans); font-size:13.5px; line-height:1.55;
     padding:8px 10px; cursor:pointer; text-align:left;
     transition:border-color .12s, background .12s;
+    overflow:hidden;
   }
   .next-sel-trigger:hover{ border-color:var(--accent); }
   .next-sel-trigger:focus{ outline:none; border-color:var(--accent); background:var(--paper); }
-  .next-sel-trigger .ph{ color:var(--ink-faint); flex:1; }
-  .next-sel-trigger .name{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .next-sel-trigger .ph{ color:var(--ink-faint); flex:1; min-width:0; }
+  .next-sel-trigger .name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .next-sel-trigger .id{
     font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size:11px; opacity:.55; flex-shrink:0;
+    font-size:11px; opacity:.55; flex-shrink:1; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    max-width:50%;
   }
   .next-sel-trigger .warn{ color:var(--c-battle); flex:1; }
   .next-sel-trigger .dot{
@@ -400,6 +403,28 @@
     font-size:14px; line-height:1; padding:2px 4px; border-radius:4px;
   }
   .choice .cdel:hover{ color:var(--c-battle); background:oklch(0.94 0.03 28); }
+  .choice .crow.choice-next{ gap:8px; }
+  .choice .cnext-on{
+    width:16px; height:16px; margin:0; cursor:pointer;
+    accent-color: var(--accent);
+    flex: 0 0 auto;
+  }
+  /* 선택지 후속 셀렉터 — flex item 이 줄어들 수 있도록 min-width:0 */
+  .choice .crow.choice-next .next-sel{ flex:1; min-width:0; }
+
+  /* next-sel — compact 변형 (선택지용, 카드 단위와 구분) */
+  .next-sel.compact .next-sel-trigger{
+    padding:4px 8px; font-size:12px; border-radius:5px;
+    background:transparent; gap:6px;
+  }
+  .next-sel.compact .next-sel-trigger .name{ font-size:12px; }
+  .next-sel.compact .next-sel-trigger .id{ font-size:10px; }
+  .next-sel.compact .next-sel-trigger .caret{ font-size:9px; }
+  .next-sel.is-disabled .next-sel-trigger{
+    pointer-events:none; opacity:.45;
+    background:oklch(0.96 0.005 90); color:var(--ink-faint);
+    cursor:not-allowed;
+  }
 
   /* 카드 푸터 */
   .card-foot{
@@ -576,12 +601,45 @@
   const $ = (s,r=document)=> r.querySelector(s);
   const el = (tag, cls)=>{ const e=document.createElement(tag); if(cls) e.className=cls; return e; };
 
-  let saveTimer = null;
+  /* ---------- 저장: 서버(data.json) = SSOT, localStorage = 오프라인 폴백 ---------- */
+  let saveLocalTimer = null;
+  let saveServerTimer = null;
+  let serverInflight = false;
+  let serverDirty = false;
+
   function saveSoon(){
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(()=>{
+    // 즉시 캐시 (네트워크 실패 시 다음 페이지 로딩 폴백용)
+    clearTimeout(saveLocalTimer);
+    saveLocalTimer = setTimeout(()=>{
       try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cards)); }catch(e){}
     }, 250);
+    // 서버 파일 디바운스 저장
+    clearTimeout(saveServerTimer);
+    saveServerTimer = setTimeout(()=> persistToServer(), 500);
+  }
+
+  async function persistToServer(opts){
+    const showToast = !!(opts && opts.toast);
+    if(serverInflight){ serverDirty = true; return false; }
+    serverInflight = true;
+    serverDirty = false;
+    let ok = false;
+    try{
+      const res = await fetch("/data", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: jsonString()
+      });
+      if(!res.ok) throw new Error(await res.text());
+      ok = true;
+      if(showToast) toast("data.json에 저장했습니다");
+    }catch(e){
+      if(showToast) toast("저장 실패 — 서버 실행 중인지 확인하세요");
+    }finally{
+      serverInflight = false;
+      if(serverDirty) persistToServer(); // 진행 중 들어온 변경 재처리
+    }
+    return ok;
   }
 
   function autoGrow(ta){
@@ -589,7 +647,7 @@
     ta.style.height = (ta.scrollHeight + 2) + "px";
   }
 
-  function newChoice(){ return { text:"", cond:"", result:"" }; }
+  function newChoice(){ return { text:"", cond:"", result:"", next:"", nextOn:false }; }
 
   function blankCard(){
     return {
@@ -610,15 +668,58 @@
   /* ---------- 상태 ---------- */
   const state = { cards: [] };
 
-  function load(){
-    let raw=null;
-    try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){}
-    if(raw){
-      try{
+  // data.json 의 한글 키 → 내부 영어 키. 이미 영어 키면 그대로 통과.
+  function fromServerFormat(c){
+    if(!c || typeof c !== "object") return c;
+    if("name" in c || "type" in c) return c;
+    return {
+      id: c.id,
+      name: c["이벤트명"],
+      type: c["이벤트타입"],
+      active: c["활성상태"] !== "off",
+      weight: c["발생가중치"],
+      region: c["지역"],
+      condition: c["발생조건"],
+      situation: c["상황"],
+      choices: Array.isArray(c["선택지"]) ? c["선택지"].map(ch=>({
+        text: ch["텍스트"],
+        cond: ch["조건"],
+        result: ch["결과"],
+        next: ch["후속이벤트"] || "",
+        nextOn: ch["후속활성"] === true
+      })) : [],
+      next: c["후속이벤트"],
+      memo: c["메모"]
+    };
+  }
+
+  async function load(){
+    // 1) 서버 파일 = SSOT
+    try{
+      const res = await fetch("/data", { cache:"no-store" });
+      if(res.ok){
+        const data = await res.json();
+        if(Array.isArray(data)){
+          state.cards = data.map(fromServerFormat).map(normalize);
+          return;
+        }
+      }
+    }catch(e){ /* 네트워크 실패 → 폴백 */ }
+
+    // 2) 폴백: localStorage 캐시
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
         const parsed = JSON.parse(raw);
-        if(Array.isArray(parsed)){ state.cards = parsed.map(normalize); return; }
-      }catch(e){}
-    }
+        if(Array.isArray(parsed)){
+          state.cards = parsed.map(normalize);
+          toast("서버 연결 실패 — 로컬 캐시에서 복원");
+          return;
+        }
+      }
+    }catch(e){}
+
+    // 3) 둘 다 없으면 시드 (이후 변경 시 자동으로 서버에 영속화)
     state.cards = seedCards();
     saveSoon();
   }
@@ -634,7 +735,7 @@
       condition: c.condition || "",
       situation: c.situation || "",
       choices: Array.isArray(c.choices) && c.choices.length
-        ? c.choices.map(ch=>({ text:ch.text||"", cond:ch.cond||"", result:ch.result||"" }))
+        ? c.choices.map(ch=>({ text:ch.text||"", cond:ch.cond||"", result:ch.result||"", next:ch.next||"", nextOn: ch.nextOn === true }))
         : [ newChoice() ],
       next: c.next || "",
       memo: c.memo || ""
@@ -715,9 +816,14 @@
 
   /* 후속 이벤트: 다른 카드의 id를 고르는 검색 가능한 셀렉트.
      보여주는 라벨은 카드 '이름', 저장은 카드 'id'. 타입별로 그룹·색 구분. */
-  function buildNextSelector(card){
-    const f = el("div","field next-sel");
-    const lab = el("label"); lab.textContent = "후속 이벤트"; f.appendChild(lab);
+  function buildNextSelector(target, opts){
+    opts = opts || {};
+    const excludeId = opts.excludeId || target.id || "";
+    const labelText = opts.label === null ? null : (opts.label || "공통 후속 이벤트");
+    const compactCls = opts.compact ? " compact" : "";
+
+    const f = el("div","field next-sel" + compactCls);
+    if(labelText){ const lab = el("label"); lab.textContent = labelText; f.appendChild(lab); }
 
     const trigger = el("button","next-sel-trigger");
     trigger.type = "button";
@@ -736,16 +842,16 @@
     function renderTrigger(){
       trigger.innerHTML = "";
       applyType(trigger, null);
-      const id = card.next;
+      const id = target.next;
       if(!id){
         const ph = el("span","ph"); ph.textContent = "선택하지 않음";
         trigger.appendChild(ph);
       } else {
-        const target = state.cards.find(c => c.id === id);
-        if(target){
-          applyType(trigger, target.type);
+        const found = state.cards.find(c => c.id === id);
+        if(found){
+          applyType(trigger, found.type);
           const dot = el("span","dot");
-          const nm  = el("span","name"); nm.textContent = target.name || "(이름 없음)";
+          const nm  = el("span","name"); nm.textContent = found.name || "(이름 없음)";
           const idS = el("span","id");   idS.textContent = id;
           trigger.appendChild(dot); trigger.appendChild(nm); trigger.appendChild(idS);
         } else {
@@ -766,9 +872,9 @@
       const cDot = el("span","dot"); cDot.style.background = "transparent"; cDot.style.border = "1px dashed var(--ink-faint)";
       const cName = el("span","name muted"); cName.textContent = "(없음 — 후속 지정 안 함)";
       clear.appendChild(cDot); clear.appendChild(cName);
-      if(!card.next) clear.classList.add("current");
+      if(!target.next) clear.classList.add("current");
       clear.addEventListener("click", ()=>{
-        card.next = "";
+        target.next = "";
         renderTrigger();
         close();
         saveSoon();
@@ -779,7 +885,7 @@
       let totalShown = 0;
       TYPE_ORDER.forEach(t => {
         const items = state.cards
-          .filter(c => c.id !== card.id && c.type === t)
+          .filter(c => c.id !== excludeId && c.type === t)
           .filter(c => !q
             || (c.name || "").toLowerCase().includes(q)
             || (c.id   || "").toLowerCase().includes(q));
@@ -797,14 +903,14 @@
         items.forEach(c => {
           const it = el("div","next-sel-item");
           applyType(it, c.type);
-          if(c.id === card.next) it.classList.add("current");
+          if(c.id === target.next) it.classList.add("current");
           const dot = el("span","dot");
           const nm  = el("span","name"); nm.textContent = c.name || "(이름 없음)";
           if(!c.name) nm.classList.add("muted");
           const idS = el("span","id");   idS.textContent = c.id;
           it.appendChild(dot); it.appendChild(nm); it.appendChild(idS);
           it.addEventListener("click", ()=>{
-            card.next = c.id;
+            target.next = c.id;
             renderTrigger();
             close();
             saveSoon();
@@ -1042,6 +1148,29 @@
       rowEl.appendChild(keyl); rowEl.appendChild(inp);
       c.appendChild(rowEl);
     });
+
+    // 후속 이벤트 행 — 체크박스 + 셀렉터 (카드 단위와 같은 컴포넌트, compact 변형)
+    const nextRow = el("div","crow choice-next");
+    const nextKey = el("span","ckey"); nextKey.textContent="후속";
+    const chk = el("input","cnext-on");
+    chk.type = "checkbox"; chk.checked = !!ch.nextOn;
+    chk.title = "체크 시 이 선택지가 끝난 뒤 지정한 후속 이벤트로 이동";
+    const selWrap = buildNextSelector(ch, {
+      excludeId: card.id,
+      label: null,
+      compact: true
+    });
+    if(!ch.nextOn) selWrap.classList.add("is-disabled");
+    chk.addEventListener("change", ()=>{
+      ch.nextOn = chk.checked;
+      selWrap.classList.toggle("is-disabled", !chk.checked);
+      saveSoon();
+    });
+    nextRow.appendChild(nextKey);
+    nextRow.appendChild(chk);
+    nextRow.appendChild(selWrap);
+    c.appendChild(nextRow);
+
     return c;
   }
 
@@ -1084,7 +1213,13 @@
       지역: c.region,
       발생조건: c.condition,
       상황: c.situation,
-      선택지: c.choices.map(ch=>({ 텍스트:ch.text, 조건:ch.cond, 결과:ch.result })),
+      선택지: c.choices.map(ch=>({
+        텍스트: ch.text,
+        조건: ch.cond,
+        결과: ch.result,
+        후속이벤트: ch.next || "",
+        후속활성: ch.nextOn === true
+      })),
       후속이벤트: c.next,
       메모: c.memo
     }));
@@ -1142,19 +1277,11 @@
     toast("보드를 다시 그렸습니다");
   });
 
-  /* ---------- 서버 파일 저장 (수동) ---------- */
+  /* ---------- 서버 파일 저장 (수동 즉시 flush) ---------- */
+  // 입력할 때마다 디바운스 저장이 자동으로 일어남. 이 버튼은 대기 중 변경분을 즉시 반영.
   async function saveToFile(){
-    try{
-      const res = await fetch("/data", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: jsonString()
-      });
-      if(!res.ok) throw new Error(await res.text());
-      toast("data.json에 저장했습니다");
-    }catch(e){
-      toast("저장 실패 — 서버 실행 중인지 확인하세요");
-    }
+    clearTimeout(saveServerTimer);
+    await persistToServer({ toast:true });
   }
   $("#btnSaveFile").addEventListener("click", saveToFile);
 
@@ -1304,8 +1431,10 @@
   }
 
   /* ---------- 시작 ---------- */
-  load();
-  render();
+  (async ()=>{
+    await load();
+    render();
+  })();
 })();
 </script>
 </body>
